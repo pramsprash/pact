@@ -23,9 +23,19 @@ class AudioController {
   static const _mutePrefKey = 'ambient_muted';
   static const _voicePrefKey = 'voice_enabled';
 
-  /// Only these movements get breath cues.
+  /// Breath cue patterns for each movement.
   static const breathPatterns = <String, BreathPattern>{
+    // Ground to Rise
+    'Cloud Sweep': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    'Hip Rounds': BreathPattern(inhaleSec: 4, exhaleSec: 6),
     'Lift & Stillness': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    // Spine & Strength
+    'Gentle Cat–Cow': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    'Tabletop Lift': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    'Wave Bridge': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    // Length & Release
+    'Supine Twist': BreathPattern(inhaleSec: 4, exhaleSec: 8),
+    'Spine Curl': BreathPattern(inhaleSec: 4, exhaleSec: 6),
     'Child Pose': BreathPattern(inhaleSec: 4, exhaleSec: 8),
   };
 
