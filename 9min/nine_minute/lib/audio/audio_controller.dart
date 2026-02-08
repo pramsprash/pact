@@ -1,8 +1,16 @@
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class BreathPattern {
+  final double inhaleSec;
+  final double exhaleSec;
+  double get cycleSec => inhaleSec + exhaleSec;
+  const BreathPattern({required this.inhaleSec, required this.exhaleSec});
+}
+
 class AudioController {
   final AudioPlayer _voice = AudioPlayer();
+  final AudioPlayer _breath = AudioPlayer();
 
   bool _muted = false;
   bool get muted => _muted;
@@ -11,14 +19,25 @@ class AudioController {
   bool get voiceEnabled => _voiceEnabled;
 
   static const _voiceVolume = 0.85;
+  static const _breathVolume = 0.7;
   static const _mutePrefKey = 'ambient_muted';
   static const _voicePrefKey = 'voice_enabled';
+
+  /// Only these movements get breath cues.
+  static const breathPatterns = <String, BreathPattern>{
+    'Lift & Stillness': BreathPattern(inhaleSec: 4, exhaleSec: 6),
+    'Child Pose': BreathPattern(inhaleSec: 4, exhaleSec: 8),
+  };
+
+  BreathPattern? _activePattern;
+  String? _lastBreathPhase;
 
   Future<void> start() async {
     final prefs = await SharedPreferences.getInstance();
     _muted = prefs.getBool(_mutePrefKey) ?? false;
     _voiceEnabled = prefs.getBool(_voicePrefKey) ?? true;
     await _voice.setVolume(_voiceVolume);
+    await _breath.setVolume(_breathVolume);
   }
 
   /// Play a voice clip by audioKey. Stops any prior clip first.
@@ -39,37 +58,88 @@ class AudioController {
   }
 
   // ---------------------------------------------------------------------------
+  // Breath cues — driven by elapsed time, played via offline clips.
+  // ---------------------------------------------------------------------------
+
+  void setBreathPattern(String segmentLabel) {
+    _activePattern = breathPatterns[segmentLabel];
+    _lastBreathPhase = null;
+  }
+
+  void clearBreathPattern() {
+    _activePattern = null;
+    _lastBreathPhase = null;
+  }
+
+  void checkBreathCue(double elapsedInSegmentSec) {
+    if (_muted || !_voiceEnabled || _activePattern == null) return;
+
+    final p = _activePattern!;
+    final cyclePos = elapsedInSegmentSec % p.cycleSec;
+    final phase = cyclePos < p.inhaleSec ? 'inhale' : 'exhale';
+
+    if (phase != _lastBreathPhase) {
+      _lastBreathPhase = phase;
+      _playBreathClip(phase);
+    }
+  }
+
+  Future<void> _playBreathClip(String phase) async {
+    try {
+      await _breath.stop();
+      final asset = phase == 'inhale'
+          ? 'assets/voice/inhale.wav'
+          : 'assets/voice/exhale.wav';
+      await _breath.setAsset(asset);
+      await _breath.setVolume(_breathVolume);
+      await _breath.play();
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
   // Transport
   // ---------------------------------------------------------------------------
 
   Future<void> fadeOutAndStop() async {
+    clearBreathPattern();
     await _voice.stop();
+    await _breath.stop();
   }
 
   Future<void> pause() async {
     await _voice.stop();
+    await _breath.stop();
   }
 
   Future<void> resume() async {
-    // No ambient to resume — voice only plays on segment boundaries.
+    // Voice only plays on segment boundaries — nothing to resume.
   }
 
   Future<void> toggleMute() async {
     _muted = !_muted;
-    if (_muted) await _voice.stop();
+    if (_muted) {
+      await _voice.stop();
+      await _breath.stop();
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_mutePrefKey, _muted);
   }
 
   Future<void> toggleVoice() async {
     _voiceEnabled = !_voiceEnabled;
-    if (!_voiceEnabled) await _voice.stop();
+    if (!_voiceEnabled) {
+      await _voice.stop();
+      await _breath.stop();
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_voicePrefKey, _voiceEnabled);
   }
 
   Future<void> dispose() async {
+    clearBreathPattern();
     await _voice.stop();
+    await _breath.stop();
     await _voice.dispose();
+    await _breath.dispose();
   }
 }

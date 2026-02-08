@@ -72,6 +72,7 @@ const kPresets = <FlowPreset>[
       'Eases lower-back stiffness',
       'Strengthens the glutes and deep stabilisers',
     ],
+    openingSec: 10,
     steps: [
       FlowStep(
         name: 'Gentle Cat–Cow',
@@ -124,6 +125,7 @@ const kPresets = <FlowPreset>[
       'Improves spinal mobility with minimal effort',
       'A quiet way to close the day',
     ],
+    openingSec: 10,
     steps: [
       FlowStep(
         name: 'Supine Twist',

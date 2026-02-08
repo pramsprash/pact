@@ -67,7 +67,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _audio.pause();
     }
 
-    // Detect segment change — play voice clip.
+    // Detect segment change — play voice clip + set breath pattern.
     final idx = _engine.currentSegmentIndex;
     if (idx != _lastSegmentIndex) {
       _lastSegmentIndex = idx;
@@ -75,6 +75,18 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (seg.audioKey != null) {
         _audio.playVoice(seg.audioKey!);
       }
+      if (_engine.currentSegmentType == SegmentType.work) {
+        _audio.setBreathPattern(_engine.currentSegmentLabel);
+      } else {
+        _audio.clearBreathPattern();
+      }
+    }
+
+    // Check breath cue phase from elapsed time (drift-free).
+    if (_engine.currentSegmentType == SegmentType.work) {
+      final seg = _engine.segments[_engine.currentSegmentIndex];
+      final elapsed = _engine.progressInSegment * seg.durationSec;
+      _audio.checkBreathCue(elapsed);
     }
 
     // Label fade logic.
