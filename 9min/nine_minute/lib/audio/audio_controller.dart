@@ -50,16 +50,26 @@ class AudioController {
     await _breath.setVolume(_breathVolume);
   }
 
+  /// Guard against overlapping playVoice calls.
+  bool _voicePlaying = false;
+
   /// Play a voice clip by audioKey. Stops any prior clip first.
   Future<void> playVoice(String audioKey) async {
     if (_muted || !_voiceEnabled) return;
-    try {
+    if (_voicePlaying) {
       await _voice.stop();
+      // Small gap so the player fully releases.
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    _voicePlaying = true;
+    try {
       await _voice.setAsset('assets/voice/$audioKey.wav');
       await _voice.setVolume(_voiceVolume);
       await _voice.play();
     } catch (_) {
       // Asset missing — fail silently.
+    } finally {
+      _voicePlaying = false;
     }
   }
 
@@ -81,11 +91,17 @@ class AudioController {
     _lastBreathPhase = null;
   }
 
+  /// Skip breath cues for the first 4 seconds so the movement name
+  /// announcement can finish without overlap.
+  static const _breathDelaySeconds = 4.0;
+
   void checkBreathCue(double elapsedInSegmentSec) {
     if (_muted || !_voiceEnabled || _activePattern == null) return;
+    if (elapsedInSegmentSec < _breathDelaySeconds) return;
 
     final p = _activePattern!;
-    final cyclePos = elapsedInSegmentSec % p.cycleSec;
+    final adjusted = elapsedInSegmentSec - _breathDelaySeconds;
+    final cyclePos = adjusted % p.cycleSec;
     final phase = cyclePos < p.inhaleSec ? 'inhale' : 'exhale';
 
     if (phase != _lastBreathPhase) {

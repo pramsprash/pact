@@ -71,18 +71,27 @@ class FlowPreset {
 
     // 3 rounds of (A work, A transition, B work, B transition, C work, C transition)
     for (var round = 0; round < 3; round++) {
-      for (final step in steps) {
+      for (var i = 0; i < steps.length; i++) {
+        final step = steps[i];
         segments.add(Segment(
           type: SegmentType.work,
           label: step.name,
           durationSec: step.workSec,
           audioKey: step.audioKey,
         ));
+
+        // Determine what follows this transition.
+        final isLastStepOfLastRound =
+            round == 2 && i == steps.length - 1;
+        final nextAudioKey = isLastStepOfLastRound
+            ? 'transition_to_rest'
+            : 'transition_to_${steps[(i + 1) % steps.length].audioKey}';
+
         segments.add(Segment(
           type: SegmentType.transition,
           label: 'Transition',
           durationSec: step.transitionSec,
-          audioKey: 'transition',
+          audioKey: nextAudioKey,
         ));
       }
     }
