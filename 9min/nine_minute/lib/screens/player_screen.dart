@@ -38,9 +38,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _engine = TimerEngine(widget.preset);
     _engine.addListener(_onEngineUpdate);
-    _engine.start();
     _uiTicker.repeat();
-    _audio.start();
+    // Ensure audio is ready before starting the engine,
+    // so the first segment announcement doesn't race.
+    _audio.start().then((_) {
+      if (mounted) _engine.start();
+    });
   }
 
   void _onEngineUpdate() {

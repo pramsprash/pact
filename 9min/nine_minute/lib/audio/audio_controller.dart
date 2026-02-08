@@ -50,26 +50,19 @@ class AudioController {
     await _breath.setVolume(_breathVolume);
   }
 
-  /// Guard against overlapping playVoice calls.
-  bool _voicePlaying = false;
-
   /// Play a voice clip by audioKey. Stops any prior clip first.
+  /// Does NOT await play() — fire-and-forget so it never blocks the caller
+  /// or races with subsequent calls.
   Future<void> playVoice(String audioKey) async {
     if (_muted || !_voiceEnabled) return;
-    if (_voicePlaying) {
-      await _voice.stop();
-      // Small gap so the player fully releases.
-      await Future.delayed(const Duration(milliseconds: 50));
-    }
-    _voicePlaying = true;
     try {
+      await _voice.stop();
       await _voice.setAsset('assets/voice/$audioKey.wav');
       await _voice.setVolume(_voiceVolume);
-      await _voice.play();
+      await _voice.seek(Duration.zero);
+      _voice.play(); // fire-and-forget — don't await
     } catch (_) {
       // Asset missing — fail silently.
-    } finally {
-      _voicePlaying = false;
     }
   }
 
