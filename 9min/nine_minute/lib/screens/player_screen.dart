@@ -34,6 +34,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // ── Transition voice sequencing ──
   Timer? _transitionVoiceTimer;
+  bool _comingFromOpening = false;
 
   // ── Label fade ──
   String _lastLabel = '';
@@ -137,7 +138,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onWorkSegment(Segment seg) {
     final step = seg.step!;
-    _audio.playVoiceKey(step.moveVoiceKey);
+    // Skip voice if the opening segment already announced this movement.
+    // On iOS, rapid stop→setAsset→play on the same key fails silently.
+    if (!_comingFromOpening) {
+      _audio.playVoiceKey(step.moveVoiceKey);
+    }
+    _comingFromOpening = false;
     setState(() {
       _poseImagePath = step.stepImageAsset;
       _poseVisible = true;
@@ -161,6 +167,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onOpeningSegment(Segment seg) {
     _breathScheduler.stop();
+    _comingFromOpening = true;
     setState(() => _poseVisible = false);
     if (seg.audioKey != null) {
       _audio.playVoiceKey(seg.audioKey!);
@@ -344,16 +351,19 @@ class _PlayerScreenState extends State<PlayerScreen>
               switchInCurve: Curves.easeIn,
               switchOutCurve: Curves.easeOut,
               child: _poseVisible && _poseImagePath.isNotEmpty
-                  ? ConstrainedBox(
+                  ? Center(
                       key: ValueKey(_poseImagePath),
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.6,
-                        maxHeight: MediaQuery.of(context).size.height * 0.28,
-                      ),
-                      child: Image.asset(
-                        _poseImagePath,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      child: SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.55,
+                        height: MediaQuery.of(context).size.height * 0.22,
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: Image.asset(
+                            _poseImagePath,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
                       ),
                     )
                   : const SizedBox(
