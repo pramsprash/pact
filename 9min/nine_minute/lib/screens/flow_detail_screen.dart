@@ -303,15 +303,22 @@ class _MovementTile extends StatelessWidget {
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                step.breath,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w300,
-                  fontStyle: FontStyle.italic,
-                  color: AppTheme.textSecondary.withOpacity(0.6),
-                  height: 1.4,
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  color: AppTheme.textSecondary.withOpacity(0.08),
+                ),
+                child: Text(
+                  step.breathProfile == 'hold'
+                      ? 'Hold & breathe'
+                      : 'Dynamic breathing',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: AppTheme.textSecondary.withOpacity(0.5),
+                  ),
                 ),
               ),
             ],

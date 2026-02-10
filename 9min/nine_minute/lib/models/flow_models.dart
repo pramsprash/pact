@@ -6,11 +6,19 @@ class Segment {
   final int durationSec;
   final String? audioKey;
 
+  /// The step driving this segment (work segments only).
+  final FlowStep? step;
+
+  /// The step that follows this transition (transition segments only).
+  final FlowStep? nextStep;
+
   const Segment({
     required this.type,
     required this.label,
     required this.durationSec,
     this.audioKey,
+    this.step,
+    this.nextStep,
   });
 
   @override
@@ -19,17 +27,19 @@ class Segment {
 
 class FlowStep {
   final String name;
-  final String audioKey;
+  final String moveVoiceKey;
   final String detail;
-  final String breath;
+  final String breathProfile; // "dynamic" or "hold"
+  final String stepImageAsset;
   final int workSec;
   final int transitionSec;
 
   const FlowStep({
     required this.name,
-    required this.audioKey,
+    required this.moveVoiceKey,
     required this.detail,
-    required this.breath,
+    required this.breathProfile,
+    required this.stepImageAsset,
     this.workSec = 50,
     this.transitionSec = 10,
   });
@@ -66,6 +76,7 @@ class FlowPreset {
         label: 'Get Ready',
         durationSec: openingSec!,
         audioKey: 'get_ready',
+        nextStep: steps.isNotEmpty ? steps.first : null,
       ));
     }
 
@@ -73,30 +84,38 @@ class FlowPreset {
     for (var round = 0; round < 3; round++) {
       for (var i = 0; i < steps.length; i++) {
         final step = steps[i];
+
+        // Work segment — carries the step for image + voice.
         segments.add(Segment(
           type: SegmentType.work,
           label: step.name,
           durationSec: step.workSec,
-          audioKey: step.audioKey,
+          audioKey: step.moveVoiceKey,
+          step: step,
         ));
 
-        // Determine what follows this transition.
+        // Determine the next step after this transition.
         final isLastStepOfLastRound =
             round == 2 && i == steps.length - 1;
+        final FlowStep? next = isLastStepOfLastRound
+            ? null
+            : steps[(i + 1) % steps.length];
         final nextAudioKey = isLastStepOfLastRound
             ? 'transition_to_rest'
-            : 'transition_to_${steps[(i + 1) % steps.length].audioKey}';
+            : 'transition_to_${next!.moveVoiceKey}';
 
+        // Transition segment — carries nextStep so UI can preview it.
         segments.add(Segment(
           type: SegmentType.transition,
           label: 'Transition',
           durationSec: step.transitionSec,
           audioKey: nextAudioKey,
+          nextStep: next,
         ));
       }
     }
 
-    // Final rest — no voice.
+    // Final rest — no voice, no step.
     segments.add(const Segment(
       type: SegmentType.rest,
       label: 'Rest',

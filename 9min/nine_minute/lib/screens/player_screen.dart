@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../audio/audio_controller.dart';
+import '../audio/breath_scheduler.dart';
 import '../data/history_repo.dart';
 import '../engine/timer_engine.dart';
 import '../models/flow_models.dart';
@@ -21,16 +22,30 @@ class _PlayerScreenState extends State<PlayerScreen>
   late final TimerEngine _engine;
   late final AnimationController _uiTicker;
   final AudioController _audio = AudioController();
+  late final BreathScheduler _breathScheduler;
 
-  String _lastLabel = '';
+  // ── Segment tracking (dedup guard) ──
   int _lastSegmentIndex = -1;
+
+  // ── Pose image ──
+  /// Path persists across segment changes so the fade-out can render.
+  String _poseImagePath = '';
+  bool _poseVisible = false;
+
+  // ── Transition voice sequencing ──
+  Timer? _transitionVoiceTimer;
+
+  // ── Label fade ──
+  String _lastLabel = '';
   bool _labelBright = true;
-  bool _completed = false;
   Timer? _fadeTimer;
+
+  bool _completed = false;
 
   @override
   void initState() {
     super.initState();
+    _breathScheduler = BreathScheduler(_audio);
     _uiTicker = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -46,10 +61,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Engine listener
+  // ---------------------------------------------------------------------------
+
   void _onEngineUpdate() {
+    // ── Completion ──
     if (_engine.state == TimerState.completed && !_completed) {
       _completed = true;
       _uiTicker.stop();
+      _breathScheduler.stop();
+      _transitionVoiceTimer?.cancel();
       _audio.fadeOutAndStop();
       HistoryRepo.log(widget.preset.title);
       setState(() {});
@@ -61,48 +83,108 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
-    // Sync ticker to engine state.
+    // ── Pause / Resume sync ──
     if (_engine.state == TimerState.running && !_uiTicker.isAnimating) {
       _uiTicker.repeat();
       _audio.resume();
+      _breathScheduler.resume();
     } else if (_engine.state != TimerState.running && _uiTicker.isAnimating) {
       _uiTicker.stop();
+      _transitionVoiceTimer?.cancel();
+      _breathScheduler.pause();
+      _audio.stopVoice();
       _audio.pause();
     }
 
-    // Detect segment change — play voice clip + set breath pattern.
+    // ── Segment change (dedup by index) ──
     final idx = _engine.currentSegmentIndex;
     if (idx != _lastSegmentIndex) {
       _lastSegmentIndex = idx;
       final seg = _engine.segments[idx];
-      if (seg.audioKey != null) {
-        _audio.playVoice(seg.audioKey!);
-      }
-      if (_engine.currentSegmentType == SegmentType.work) {
-        _audio.setBreathPattern(_engine.currentSegmentLabel);
-      } else {
-        _audio.clearBreathPattern();
+      _transitionVoiceTimer?.cancel();
+
+      switch (seg.type) {
+        case SegmentType.work:
+          _onWorkSegment(seg);
+          break;
+        case SegmentType.transition:
+          _onTransitionSegment(seg);
+          break;
+        case SegmentType.opening:
+          _onOpeningSegment(seg);
+          break;
+        case SegmentType.rest:
+          _onRestSegment();
+          break;
       }
     }
 
-    // Check breath cue phase from elapsed time (drift-free).
-    if (_engine.currentSegmentType == SegmentType.work) {
-      final seg = _engine.segments[_engine.currentSegmentIndex];
-      final elapsed = _engine.progressInSegment * seg.durationSec;
-      _audio.checkBreathCue(elapsed);
-    }
-
-    // Label fade logic.
+    // ── Label fade ──
     final label = _engine.currentSegmentLabel;
     if (label != _lastLabel) {
       _lastLabel = label;
       _fadeTimer?.cancel();
       setState(() => _labelBright = true);
-      _fadeTimer = Timer(const Duration(milliseconds: 2500), () {
+      _fadeTimer = Timer(const Duration(milliseconds: 3000), () {
         if (mounted) setState(() => _labelBright = false);
       });
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Segment handlers
+  // ---------------------------------------------------------------------------
+
+  void _onWorkSegment(Segment seg) {
+    final step = seg.step!;
+    _audio.playVoiceKey(step.moveVoiceKey);
+    setState(() {
+      _poseImagePath = step.stepImageAsset;
+      _poseVisible = true;
+    });
+    _breathScheduler.startForSegment(seg, DateTime.now(), seg.durationSec);
+  }
+
+  void _onTransitionSegment(Segment seg) {
+    _breathScheduler.stop();
+    setState(() => _poseVisible = false);
+    _audio.playVoiceKey('transition');
+    if (seg.nextStep != null) {
+      _transitionVoiceTimer = Timer(
+        const Duration(milliseconds: 1500),
+        () {
+          if (mounted) _audio.playVoiceKey(seg.nextStep!.moveVoiceKey);
+        },
+      );
+    }
+  }
+
+  void _onOpeningSegment(Segment seg) {
+    _breathScheduler.stop();
+    setState(() => _poseVisible = false);
+    if (seg.audioKey != null) {
+      _audio.playVoiceKey(seg.audioKey!);
+    }
+    // Pre-announce the first movement, just like transitions do.
+    // Longer delay than transitions — gives "Get Ready" time to finish.
+    if (seg.nextStep != null) {
+      _transitionVoiceTimer = Timer(
+        const Duration(milliseconds: 2500),
+        () {
+          if (mounted) _audio.playVoiceKey(seg.nextStep!.moveVoiceKey);
+        },
+      );
+    }
+  }
+
+  void _onRestSegment() {
+    _breathScheduler.stop();
+    setState(() => _poseVisible = false);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Exit
+  // ---------------------------------------------------------------------------
 
   Future<void> _confirmExit() async {
     _engine.pause();
@@ -110,7 +192,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        title: const Text('Exit flow?', style: TextStyle(color: AppTheme.textPrimary)),
+        title: const Text('Exit flow?',
+            style: TextStyle(color: AppTheme.textPrimary)),
         content: const Text('Your session will end.',
             style: TextStyle(color: AppTheme.textSecondary)),
         actions: [
@@ -127,6 +210,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     if (confirmed == true && mounted) {
       _engine.stop();
+      _breathScheduler.stop();
+      _transitionVoiceTimer?.cancel();
       await _audio.fadeOutAndStop();
       if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     } else if (mounted) {
@@ -134,9 +219,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
   @override
   void dispose() {
     _fadeTimer?.cancel();
+    _transitionVoiceTimer?.cancel();
+    _breathScheduler.stop();
     _engine.removeListener(_onEngineUpdate);
     _engine.dispose();
     _uiTicker.dispose();
@@ -144,28 +235,52 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
   String _formatTime(int seconds) {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     if (_completed) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('9 minutes.', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 12),
-              Text('Done.', style: Theme.of(context).textTheme.bodyLarge),
-            ],
+        body: AnimatedOpacity(
+          opacity: 1.0,
+          duration: const Duration(milliseconds: 800),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('9 minutes.', style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w300,
+                  color: AppTheme.textPrimary,
+                )),
+                const SizedBox(height: 10),
+                Text('Done.', style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w300,
+                  color: AppTheme.textPrimary.withOpacity(0.8),
+                )),
+              ],
+            ),
           ),
         ),
       );
     }
+
+    final seg = _engine.state != TimerState.idle
+        ? _engine.segments[_engine.currentSegmentIndex]
+        : _engine.segments.first;
 
     return Scaffold(
       body: SafeArea(
@@ -180,8 +295,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   TextButton(
                     onPressed: _confirmExit,
                     style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.textSecondary.withOpacity(0.45),
-                      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
+                      foregroundColor:
+                          AppTheme.textSecondary.withOpacity(0.45),
+                      textStyle: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w400),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
                     child: const Text('Exit'),
@@ -219,20 +336,46 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
 
-            const Spacer(flex: 3),
+            const Spacer(flex: 2),
+
+            // ── Pose image (centered above ring, fades on change) ──
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              switchInCurve: Curves.easeIn,
+              switchOutCurve: Curves.easeOut,
+              child: _poseVisible && _poseImagePath.isNotEmpty
+                  ? ConstrainedBox(
+                      key: ValueKey(_poseImagePath),
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.6,
+                        maxHeight: MediaQuery.of(context).size.height * 0.28,
+                      ),
+                      child: Image.asset(
+                        _poseImagePath,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    )
+                  : const SizedBox(
+                      key: ValueKey('empty'),
+                      height: 40,
+                    ),
+            ),
+
+            const SizedBox(height: 20),
 
             // ── Smooth ring ──
             AnimatedBuilder(
               animation: _uiTicker,
               builder: (context, _) {
                 return SizedBox(
-                  width: 260,
-                  height: 260,
+                  width: 220,
+                  height: 220,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       CustomPaint(
-                        size: const Size(260, 260),
+                        size: const Size(220, 220),
                         painter: _RingPainter(
                           progress: _engine.progressInSegment,
                         ),
@@ -240,9 +383,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                       Text(
                         _formatTime(_engine.remainingInSegmentSec),
                         style: const TextStyle(
-                          fontSize: 48,
+                          fontFamily: 'Roboto',
+                          fontSize: 44,
                           fontWeight: FontWeight.w200,
                           color: AppTheme.textPrimary,
+                          letterSpacing: 2,
                           fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -252,16 +397,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               },
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
 
-            // ── Label ──
+            // ── Movement label ──
             AnimatedOpacity(
-              opacity: _labelBright ? 1.0 : 0.4,
+              opacity: _labelBright ? 1.0 : 0.6,
               duration: const Duration(milliseconds: 800),
-              child: Text(
-                _engine.currentSegmentLabel,
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
+              child: _buildLabelText(seg),
             ),
 
             const SizedBox(height: 12),
@@ -271,7 +413,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               listenable: _engine,
               builder: (context, _) => Text(
                 _formatTime(_engine.totalRemainingSec),
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: TextStyle(
+                  fontFamily: 'Roboto',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w300,
+                  color: AppTheme.textSecondary,
+                  letterSpacing: 1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
 
@@ -287,9 +436,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                   onPressed: isRunning ? _engine.pause : _engine.resume,
                   icon: Icon(
                     isRunning
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_filled,
-                    color: AppTheme.accentCyan,
+                        ? Icons.pause_circle_outlined
+                        : Icons.play_circle_outlined,
+                    color: AppTheme.textSecondary.withOpacity(0.5),
                     size: 56,
                   ),
                 );
@@ -301,7 +450,37 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
     );
   }
+
+  /// Centred label text — layout never changes width, preventing jumps.
+  Widget _buildLabelText(Segment seg) {
+    final label = _engine.currentSegmentLabel;
+
+    if (seg.type == SegmentType.transition && seg.nextStep != null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: 6),
+          Text(
+            'Next: ${seg.nextStep!.name}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w300,
+              color: AppTheme.textSecondary.withOpacity(0.6),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(label, style: Theme.of(context).textTheme.headlineMedium);
+  }
+
 }
+
+// ---------------------------------------------------------------------------
+// Ring painter (unchanged)
+// ---------------------------------------------------------------------------
 
 class _RingPainter extends CustomPainter {
   final double progress;
@@ -314,13 +493,13 @@ class _RingPainter extends CustomPainter {
     const strokeWidth = 6.0;
 
     final trackPaint = Paint()
-      ..color = AppTheme.textSecondary.withOpacity(0.12)
+      ..color = AppTheme.divider
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
     canvas.drawCircle(center, radius, trackPaint);
 
     final arcPaint = Paint()
-      ..color = AppTheme.accentCyan
+      ..color = AppTheme.textPrimary
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;

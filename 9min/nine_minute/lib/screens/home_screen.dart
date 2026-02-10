@@ -12,37 +12,63 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 56),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text('9Minute', style: Theme.of(context).textTheme.headlineLarge),
-                  IconButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const HistoryScreen()),
-                    ),
-                    icon: const Icon(Icons.history,
-                        color: AppTheme.textSecondary, size: 24),
+        child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 40),
+                ClipOval(
+                  child: Image.asset(
+                    'assets/logo/9minute_logo.png',
+                    width: 100,
+                    height: 100,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.medium,
+                    isAntiAlias: true,
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Choose your flow',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 40),
-              ...kPresets.asMap().entries.map(
-                (e) => _PresetCard(preset: e.value, glow: e.key == 0),
-              ),
-            ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '9 Minutes',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 1.5,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 36),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Choose your flow',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const HistoryScreen()),
+                      ),
+                      icon: const Icon(Icons.history,
+                          color: AppTheme.textSecondary, size: 22),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                ...kPresets.asMap().entries.map(
+                  (e) => _PresetCard(preset: e.value, glow: e.key == 0),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
@@ -73,9 +99,9 @@ class _PresetCard extends StatelessWidget {
             boxShadow: glow
                 ? [
                     BoxShadow(
-                      color: AppTheme.accentCyan.withOpacity(0.08),
-                      blurRadius: 24,
-                      spreadRadius: 2,
+                      color: AppTheme.textPrimary.withOpacity(0.15),
+                      blurRadius: 22,
+                      spreadRadius: 0,
                     ),
                   ]
                 : null,
@@ -87,7 +113,8 @@ class _PresetCard extends StatelessWidget {
                 preset.title,
                 style: const TextStyle(
                   fontSize: 20,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
                   color: AppTheme.textPrimary,
                 ),
               ),
