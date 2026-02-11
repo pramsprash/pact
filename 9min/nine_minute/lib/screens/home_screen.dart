@@ -4,6 +4,7 @@ import '../models/flow_models.dart';
 import '../theme.dart';
 import 'history_screen.dart';
 import 'flow_detail_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -51,14 +52,28 @@ class HomeScreen extends StatelessWidget {
                         color: AppTheme.textPrimary,
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const HistoryScreen()),
-                      ),
-                      icon: const Icon(Icons.history,
-                          color: AppTheme.textSecondary, size: 22),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const HistoryScreen()),
+                          ),
+                          icon: const Icon(Icons.history,
+                              color: AppTheme.textSecondary, size: 22),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const SettingsScreen()),
+                          ),
+                          icon: const Icon(Icons.settings,
+                              color: AppTheme.textSecondary, size: 22),
+                        ),
+                      ],
                     ),
                   ],
                 ),

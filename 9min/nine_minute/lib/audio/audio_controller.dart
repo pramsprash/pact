@@ -1,11 +1,15 @@
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'tts_service.dart';
 
 class AudioController {
   // Three independent players — ambient, voice announcements, breath cues.
   final AudioPlayer _ambient = AudioPlayer();
   final AudioPlayer _voice = AudioPlayer();
   final AudioPlayer _breath = AudioPlayer();
+
+  final TtsService _tts = TtsService();
+  TtsService get ttsService => _tts;
 
   // Ambient is the loudest layer; voice sits just underneath.
   static const _ambientVolume = 0.50;
@@ -32,6 +36,7 @@ class AudioController {
     await _voice.setVolume(_voiceVolume);
     await _breath.setVolume(_breathVolume);
     await _ambient.setVolume(_muted ? 0.0 : _ambientVolume);
+    await _tts.init();
   }
 
   // ---------------------------------------------------------------------------
@@ -69,6 +74,10 @@ class AudioController {
   /// Stops any prior clip first (no overlap). Fire-and-forget.
   Future<void> playVoiceKey(String key) async {
     if (_muted || !_voiceEnabled) return;
+    if (_tts.isActive) {
+      await _tts.speak(key);
+      return;
+    }
     try {
       await _voice.stop();
       await _voice.setAsset('assets/voice/$key.wav');
@@ -80,6 +89,7 @@ class AudioController {
   /// Immediately stop any active voice playback.
   Future<void> stopVoice() async {
     await _voice.stop();
+    await _tts.stop();
   }
 
   // ---------------------------------------------------------------------------
@@ -88,6 +98,10 @@ class AudioController {
 
   Future<void> playInhale() async {
     if (_muted || !_voiceEnabled) return;
+    if (_tts.isActive) {
+      await _tts.speak('inhale');
+      return;
+    }
     try {
       await _breath.stop();
       await _breath.setAsset('assets/voice/inhale.wav');
@@ -98,6 +112,10 @@ class AudioController {
 
   Future<void> playExhale() async {
     if (_muted || !_voiceEnabled) return;
+    if (_tts.isActive) {
+      await _tts.speak('exhale');
+      return;
+    }
     try {
       await _breath.stop();
       await _breath.setAsset('assets/voice/exhale.wav');
@@ -109,6 +127,7 @@ class AudioController {
   /// Immediately stop any playing breath clip (called by BreathScheduler).
   Future<void> stopBreath() async {
     await _breath.stop();
+    await _tts.stop();
   }
 
   // ---------------------------------------------------------------------------
@@ -119,12 +138,14 @@ class AudioController {
     await stopAmbientLoop(fade: true);
     await _voice.stop();
     await _breath.stop();
+    await _tts.stop();
   }
 
   Future<void> pause() async {
     await _ambient.pause();
     await _voice.stop();
     await _breath.stop();
+    await _tts.stop();
   }
 
   Future<void> resume() async {
@@ -139,6 +160,7 @@ class AudioController {
       await _ambient.setVolume(0.0);
       await _voice.stop();
       await _breath.stop();
+      await _tts.stop();
     } else {
       await _ambient.setVolume(_ambientVolume);
     }
@@ -151,6 +173,7 @@ class AudioController {
     if (!_voiceEnabled) {
       await _voice.stop();
       await _breath.stop();
+      await _tts.stop();
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_voicePrefKey, _voiceEnabled);
@@ -160,6 +183,7 @@ class AudioController {
     await _ambient.stop();
     await _voice.stop();
     await _breath.stop();
+    await _tts.dispose();
     await _ambient.dispose();
     await _voice.dispose();
     await _breath.dispose();
